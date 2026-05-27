@@ -1,4 +1,4 @@
-const CACHE_NAME = "violin-fingering-pwa-v4";
+const CACHE_NAME = "violin-fingering-pwa-v5";
 const APP_SHELL = [
   "./",
   "./index.html",

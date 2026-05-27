@@ -152,6 +152,7 @@ let activeTimers = [];
 let audioUnlocked = false;
 let audioMode = "pending";
 let currentAudioUrl = "";
+const wavUrlCache = new Map();
 
 function init() {
   TONICS.forEach((tonic) => {
@@ -175,6 +176,19 @@ function registerServiceWorker() {
       console.info("Service worker registration skipped.");
     });
   });
+}
+
+function disableDoubleTapZoom() {
+  let lastTouchEnd = 0;
+  document.addEventListener(
+    "touchend",
+    (event) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 320) event.preventDefault();
+      lastTouchEnd = now;
+    },
+    { passive: false }
+  );
 }
 
 function currentKey() {
@@ -417,13 +431,16 @@ async function unlockAudio(playConfirmation = true) {
   audioUnlocked = true;
   setNowPlaying(`声音已开启 · ${audioMode === "html-audio" ? "兼容模式" : "音频模式"}`);
   hideAudioGate();
+  warmSingleNoteCache();
 }
 
 function midiToFrequency(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
 }
 
-function makeWavUrl(notes) {
+function makeWavUrl(notes, cacheKey = "") {
+  if (cacheKey && wavUrlCache.has(cacheKey)) return wavUrlCache.get(cacheKey);
+
   const sampleRate = 22050;
   const samples = [];
 
@@ -439,13 +456,13 @@ function makeWavUrl(notes) {
       const attack = Math.min(1, i / (sampleRate * 0.025));
       const release = Math.min(1, (sampleCount - i) / (sampleRate * 0.09));
       const envelope = Math.max(0, Math.min(attack, release));
-      const vibrato = Math.sin(2 * Math.PI * 5.2 * t) * 2.4;
+      const vibrato = Math.sin(2 * Math.PI * 4.6 * t) * 0.28;
       const f = frequency + vibrato;
       const value =
-        Math.sin(2 * Math.PI * f * t) * 0.56 +
-        Math.sin(2 * Math.PI * f * 2 * t) * 0.18 +
-        Math.sin(2 * Math.PI * f * 3 * t) * 0.08;
-      samples.push(Math.max(-1, Math.min(1, value * envelope * 0.72)));
+        Math.sin(2 * Math.PI * f * t) * 0.72 +
+        Math.sin(2 * Math.PI * f * 2 * t) * 0.08 +
+        Math.sin(2 * Math.PI * f * 3 * t) * 0.03;
+      samples.push(Math.max(-1, Math.min(1, value * envelope * 0.66)));
     }
 
     for (let i = 0; i < gapCount; i += 1) samples.push(0);
@@ -473,9 +490,14 @@ function makeWavUrl(notes) {
     view.setInt16(44 + index * 2, sample * 32767, true);
   });
 
-  if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
-  currentAudioUrl = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
-  return currentAudioUrl;
+  const url = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+  if (cacheKey) {
+    wavUrlCache.set(cacheKey, url);
+  } else {
+    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = url;
+  }
+  return url;
 }
 
 function writeAscii(view, offset, text) {
@@ -485,11 +507,21 @@ function writeAscii(view, offset, text) {
 }
 
 async function playWavClip(notes) {
-  const url = makeWavUrl(notes);
+  const cacheKey = notes.length === 1 ? `note-${notes[0].midi}-${notes[0].duration ?? 0.65}` : "";
+  const url = makeWavUrl(notes, cacheKey);
   fallbackAudio.pause();
   fallbackAudio.currentTime = 0;
   fallbackAudio.src = url;
   await fallbackAudio.play();
+}
+
+function warmSingleNoteCache() {
+  window.setTimeout(() => {
+    for (let midi = 55; midi <= 83; midi += 1) {
+      makeWavUrl([{ midi, duration: 0.75 }], `note-${midi}-0.75`);
+      makeWavUrl([{ midi, duration: 0.9 }], `note-${midi}-0.9`);
+    }
+  }, 180);
 }
 
 async function playTone(midi, duration = 0.75, delay = 0, label = "") {
@@ -531,14 +563,14 @@ async function playTone(midi, duration = 0.75, delay = 0, label = "") {
   const filter = context.createBiquadFilter();
   const gain = context.createGain();
 
-  main.type = "sawtooth";
-  support.type = "triangle";
+  main.type = "triangle";
+  support.type = "sine";
   main.frequency.setValueAtTime(midiToFrequency(midi), start);
   support.frequency.setValueAtTime(midiToFrequency(midi), start);
   vibrato.frequency.setValueAtTime(5.8, start);
-  vibratoGain.gain.setValueAtTime(2.5 + brightness * 3.5, start);
+  vibratoGain.gain.setValueAtTime(0.22 + brightness * 0.72, start);
   filter.type = "lowpass";
-  filter.frequency.setValueAtTime(900 + brightness * 2600, start);
+  filter.frequency.setValueAtTime(1200 + brightness * 2200, start);
   filter.Q.setValueAtTime(2.1, start);
 
   gain.gain.setValueAtTime(0.0001, start);
@@ -690,3 +722,4 @@ skipAudioGate.addEventListener("click", hideAudioGate);
 
 init();
 registerServiceWorker();
+disableDoubleTapZoom();
