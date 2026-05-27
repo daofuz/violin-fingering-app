@@ -145,6 +145,7 @@ const soundWave = document.querySelector("#soundWave");
 
 let audioContext = null;
 let activeTimers = [];
+let audioUnlocked = false;
 
 function init() {
   TONICS.forEach((tonic) => {
@@ -363,6 +364,22 @@ function ensureAudio() {
   return audioContext;
 }
 
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const context = ensureAudio();
+  const gain = context.createGain();
+  const oscillator = context.createOscillator();
+
+  gain.gain.setValueAtTime(0.0001, context.currentTime);
+  oscillator.frequency.setValueAtTime(440, context.currentTime);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start();
+  oscillator.stop(context.currentTime + 0.03);
+  audioUnlocked = true;
+  setNowPlaying("声音已开启");
+}
+
 function midiToFrequency(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
 }
@@ -502,6 +519,7 @@ prevKey.addEventListener("click", () => changeKey(-1));
 nextKey.addEventListener("click", () => changeKey(1));
 playScaleButton.addEventListener("click", playCurrentScale);
 playStringsButton.addEventListener("click", playOpenStrings);
+document.addEventListener("pointerdown", unlockAudio, { once: true });
 
 init();
 registerServiceWorker();
