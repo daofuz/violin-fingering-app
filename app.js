@@ -142,6 +142,9 @@ const playStringsButton = document.querySelector("#playStrings");
 const toneBrightness = document.querySelector("#toneBrightness");
 const nowPlaying = document.querySelector("#nowPlaying");
 const soundWave = document.querySelector("#soundWave");
+const audioGate = document.querySelector("#audioGate");
+const enableAudio = document.querySelector("#enableAudio");
+const skipAudioGate = document.querySelector("#skipAudioGate");
 
 let audioContext = null;
 let activeTimers = [];
@@ -345,6 +348,11 @@ function renderFingerboard(scale) {
       `;
       marker.title = `${stringInfo.name} 弦：${scaleName || physicalName}，${fingerInfo.finger}`;
       marker.addEventListener("click", () => {
+        if (!audioUnlocked) {
+          showAudioGate();
+          setNowPlaying("请先启用声音");
+          return;
+        }
         playTone(midi, 0.9, 0, `${stringInfo.name} 弦 ${scaleName || physicalName} · ${fingerInfo.finger}`);
         pulseMarker(marker, 900);
       });
@@ -357,35 +365,60 @@ function renderFingerboard(scale) {
   });
 }
 
-function ensureAudio() {
+async function ensureAudio() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) {
+    setNowPlaying("当前浏览器不支持 Web Audio");
+    return null;
+  }
   if (!audioContext) audioContext = new AudioContext();
-  if (audioContext.state === "suspended") audioContext.resume();
+  if (audioContext.state === "suspended") await audioContext.resume();
   return audioContext;
 }
 
-function unlockAudio() {
+function showAudioGate() {
+  if (audioGate && !audioUnlocked) audioGate.hidden = false;
+}
+
+function hideAudioGate() {
+  if (audioGate) audioGate.hidden = true;
+}
+
+async function unlockAudio(playConfirmation = true) {
   if (audioUnlocked) return;
-  const context = ensureAudio();
+  const context = await ensureAudio();
+  if (!context) return;
   const gain = context.createGain();
   const oscillator = context.createOscillator();
 
   gain.gain.setValueAtTime(0.0001, context.currentTime);
-  oscillator.frequency.setValueAtTime(440, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.11, context.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
+  oscillator.frequency.setValueAtTime(660, context.currentTime);
   oscillator.connect(gain);
   gain.connect(context.destination);
   oscillator.start();
-  oscillator.stop(context.currentTime + 0.03);
+  oscillator.stop(context.currentTime + 0.3);
   audioUnlocked = true;
   setNowPlaying("声音已开启");
+  hideAudioGate();
 }
 
 function midiToFrequency(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
 }
 
-function playTone(midi, duration = 0.75, delay = 0, label = "") {
-  const context = ensureAudio();
+async function playTone(midi, duration = 0.75, delay = 0, label = "") {
+  const context = await ensureAudio();
+  if (!context) {
+    showAudioGate();
+    return;
+  }
+  if (context.state !== "running") {
+    showAudioGate();
+    setNowPlaying("请先启用声音");
+    return;
+  }
   const start = context.currentTime + delay;
   const end = start + duration;
   const brightness = Number(toneBrightness.value) / 100;
@@ -447,6 +480,11 @@ function nearestMidiForPc(pc) {
 }
 
 function playCurrentScale() {
+  if (!audioUnlocked) {
+    showAudioGate();
+    setNowPlaying("请先启用声音");
+    return;
+  }
   stopTimers();
   const scale = getScale();
   const baseMidi = nearestMidiForPc(scale.pcs[0]);
@@ -471,6 +509,11 @@ function playCurrentScale() {
 }
 
 function playOpenStrings() {
+  if (!audioUnlocked) {
+    showAudioGate();
+    setNowPlaying("请先启用声音");
+    return;
+  }
   stopTimers();
   playStringsButton.textContent = "定位中";
   STRINGS.forEach((stringInfo, index) => {
@@ -519,7 +562,8 @@ prevKey.addEventListener("click", () => changeKey(-1));
 nextKey.addEventListener("click", () => changeKey(1));
 playScaleButton.addEventListener("click", playCurrentScale);
 playStringsButton.addEventListener("click", playOpenStrings);
-document.addEventListener("pointerdown", unlockAudio, { once: true });
+enableAudio.addEventListener("click", () => unlockAudio(true));
+skipAudioGate.addEventListener("click", hideAudioGate);
 
 init();
 registerServiceWorker();
