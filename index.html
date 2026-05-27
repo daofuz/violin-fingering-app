@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="小提琴指法" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="description" content="带五线谱调号、声音和竖向指板的小提琴变调指法练习工具。" />
+    <title>小提琴变调指法练习</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="control-panel" aria-label="练习设置">
+        <div class="brand-block">
+          <p class="eyebrow">Violin Fingering Map</p>
+          <h1>小提琴变调指法练习</h1>
+        </div>
+
+        <div class="controls-grid">
+          <label class="field">
+            <span>主音</span>
+            <select id="tonicSelect"></select>
+          </label>
+
+          <label class="field">
+            <span>调式</span>
+            <select id="modeSelect">
+              <option value="major">大调</option>
+              <option value="minor">自然小调</option>
+              <option value="harmonicMinor">和声小调</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>练习弦</span>
+            <select id="stringFocus">
+              <option value="all">四根弦</option>
+              <option value="G">G 弦</option>
+              <option value="D">D 弦</option>
+              <option value="A">A 弦</option>
+              <option value="E">E 弦</option>
+            </select>
+          </label>
+
+          <label class="toggle-row">
+            <input id="showOnlyScale" type="checkbox" checked />
+            <span>只显示本调音阶音</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="summary-strip" aria-live="polite">
+        <div>
+          <span class="summary-label">当前调</span>
+          <strong id="keyName"></strong>
+        </div>
+        <div>
+          <span class="summary-label">调号</span>
+          <strong id="signatureText"></strong>
+        </div>
+        <div>
+          <span class="summary-label">音阶</span>
+          <strong id="scaleText"></strong>
+        </div>
+      </section>
+
+      <section class="signature-panel" aria-label="五线谱调号">
+        <div class="signature-copy">
+          <span class="summary-label">谱号开头调号</span>
+          <strong id="signatureTitle"></strong>
+        </div>
+        <div id="staffSignature" class="staff-signature" role="img" aria-label="五线谱开头升降调号图"></div>
+      </section>
+
+      <section class="practice-layout">
+        <div class="fingerboard-panel">
+          <div class="toolbar">
+            <button id="prevKey" class="icon-button" type="button" aria-label="上一个调" title="上一个调">
+              <span aria-hidden="true">‹</span>
+            </button>
+            <div class="toolbar-title">
+              <span id="boardTitle">第一把位指板</span>
+              <small>从弦枕到四指</small>
+            </div>
+            <button id="nextKey" class="icon-button" type="button" aria-label="下一个调" title="下一个调">
+              <span aria-hidden="true">›</span>
+            </button>
+          </div>
+
+          <div id="fingerboard" class="fingerboard" role="img" aria-label="小提琴第一把位指法图"></div>
+        </div>
+
+        <aside class="sound-panel" aria-label="声音和视觉练习">
+          <div class="sound-card">
+            <div class="sound-topline">
+              <span>声音练习</span>
+              <span id="nowPlaying" class="now-playing">点击音点试听</span>
+            </div>
+            <div class="sound-actions">
+              <button id="playScale" class="primary-button" type="button">播放音阶</button>
+              <button id="playStrings" class="secondary-button" type="button">四弦定位</button>
+            </div>
+            <label class="field compact-field">
+              <span>音色亮度</span>
+              <input id="toneBrightness" type="range" min="0" max="100" value="58" />
+            </label>
+            <div id="soundWave" class="sound-wave" aria-hidden="true"></div>
+          </div>
+
+          <div class="legend">
+            <h2>指法标记</h2>
+            <div class="legend-row"><span class="dot low"></span><span>低指：向弦枕靠近半音</span></div>
+            <div class="legend-row"><span class="dot normal"></span><span>自然手型位置</span></div>
+            <div class="legend-row"><span class="dot high"></span><span>高指：向琴码方向升半音</span></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
