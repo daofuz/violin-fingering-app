@@ -145,10 +145,13 @@ const soundWave = document.querySelector("#soundWave");
 const audioGate = document.querySelector("#audioGate");
 const enableAudio = document.querySelector("#enableAudio");
 const skipAudioGate = document.querySelector("#skipAudioGate");
+const fallbackAudio = document.querySelector("#fallbackAudio");
 
 let audioContext = null;
 let activeTimers = [];
 let audioUnlocked = false;
+let audioMode = "pending";
+let currentAudioUrl = "";
 
 function init() {
   TONICS.forEach((tonic) => {
@@ -386,21 +389,33 @@ function hideAudioGate() {
 
 async function unlockAudio(playConfirmation = true) {
   if (audioUnlocked) return;
-  const context = await ensureAudio();
-  if (!context) return;
-  const gain = context.createGain();
-  const oscillator = context.createOscillator();
+  let context = null;
 
-  gain.gain.setValueAtTime(0.0001, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.11, context.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
-  oscillator.frequency.setValueAtTime(660, context.currentTime);
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.start();
-  oscillator.stop(context.currentTime + 0.3);
+  try {
+    await playWavClip([{ midi: 76, duration: 0.28 }]);
+    audioMode = "html-audio";
+  } catch (error) {
+    context = await ensureAudio();
+    if (!context) {
+      setNowPlaying("声音测试失败");
+      return;
+    }
+    const gain = context.createGain();
+    const oscillator = context.createOscillator();
+
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.11, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
+    oscillator.frequency.setValueAtTime(660, context.currentTime);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.3);
+    audioMode = "web-audio";
+  }
+
   audioUnlocked = true;
-  setNowPlaying("声音已开启");
+  setNowPlaying(`声音已开启 · ${audioMode === "html-audio" ? "兼容模式" : "音频模式"}`);
   hideAudioGate();
 }
 
@@ -408,7 +423,93 @@ function midiToFrequency(midi) {
   return 440 * 2 ** ((midi - 69) / 12);
 }
 
+function makeWavUrl(notes) {
+  const sampleRate = 22050;
+  const samples = [];
+
+  notes.forEach((note) => {
+    const frequency = midiToFrequency(note.midi);
+    const duration = note.duration ?? 0.65;
+    const gap = note.gap ?? 0.06;
+    const sampleCount = Math.floor(duration * sampleRate);
+    const gapCount = Math.floor(gap * sampleRate);
+
+    for (let i = 0; i < sampleCount; i += 1) {
+      const t = i / sampleRate;
+      const attack = Math.min(1, i / (sampleRate * 0.025));
+      const release = Math.min(1, (sampleCount - i) / (sampleRate * 0.09));
+      const envelope = Math.max(0, Math.min(attack, release));
+      const vibrato = Math.sin(2 * Math.PI * 5.2 * t) * 2.4;
+      const f = frequency + vibrato;
+      const value =
+        Math.sin(2 * Math.PI * f * t) * 0.56 +
+        Math.sin(2 * Math.PI * f * 2 * t) * 0.18 +
+        Math.sin(2 * Math.PI * f * 3 * t) * 0.08;
+      samples.push(Math.max(-1, Math.min(1, value * envelope * 0.72)));
+    }
+
+    for (let i = 0; i < gapCount; i += 1) samples.push(0);
+  });
+
+  const dataBytes = samples.length * 2;
+  const buffer = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buffer);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataBytes, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataBytes, true);
+
+  samples.forEach((sample, index) => {
+    view.setInt16(44 + index * 2, sample * 32767, true);
+  });
+
+  if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+  currentAudioUrl = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+  return currentAudioUrl;
+}
+
+function writeAscii(view, offset, text) {
+  for (let i = 0; i < text.length; i += 1) {
+    view.setUint8(offset + i, text.charCodeAt(i));
+  }
+}
+
+async function playWavClip(notes) {
+  const url = makeWavUrl(notes);
+  fallbackAudio.pause();
+  fallbackAudio.currentTime = 0;
+  fallbackAudio.src = url;
+  await fallbackAudio.play();
+}
+
 async function playTone(midi, duration = 0.75, delay = 0, label = "") {
+  if (audioMode === "html-audio") {
+    if (delay === 0) {
+      playWavClip([{ midi, duration }]).catch(() => showAudioGate());
+    } else {
+      const timer = window.setTimeout(() => {
+        playWavClip([{ midi, duration }]).catch(() => showAudioGate());
+      }, delay * 1000);
+      activeTimers.push(timer);
+    }
+    if (label) {
+      window.setTimeout(() => setNowPlaying(label), delay * 1000);
+      window.setTimeout(() => setNowPlaying("点击音点试听"), (delay + duration + 0.2) * 1000);
+    }
+    pulseWave(delay, duration);
+    return;
+  }
+
   const context = await ensureAudio();
   if (!context) {
     showAudioGate();
@@ -498,6 +599,17 @@ function playCurrentScale() {
   });
 
   playScaleButton.textContent = "播放中";
+  if (audioMode === "html-audio") {
+    playWavClip(notes.map((midi) => ({ midi, duration: 0.44, gap: 0.04 }))).catch(() => showAudioGate());
+    setNowPlaying("播放音阶");
+    pulseWave(0, notes.length * 0.48);
+    activeTimers.push(window.setTimeout(() => {
+      playScaleButton.textContent = "播放音阶";
+      setNowPlaying("点击音点试听");
+    }, notes.length * 480 + 250));
+    return;
+  }
+
   notes.forEach((midi, index) => {
     const name = scale.names[index % scale.names.length];
     playTone(midi, 0.62, index * 0.5, name);
@@ -516,6 +628,17 @@ function playOpenStrings() {
   }
   stopTimers();
   playStringsButton.textContent = "定位中";
+  if (audioMode === "html-audio") {
+    playWavClip(STRINGS.map((stringInfo) => ({ midi: stringInfo.midi, duration: 0.54, gap: 0.05 }))).catch(() => showAudioGate());
+    setNowPlaying("四弦定位");
+    pulseWave(0, STRINGS.length * 0.59);
+    activeTimers.push(window.setTimeout(() => {
+      playStringsButton.textContent = "四弦定位";
+      setNowPlaying("点击音点试听");
+    }, STRINGS.length * 590 + 220));
+    return;
+  }
+
   STRINGS.forEach((stringInfo, index) => {
     playTone(stringInfo.midi, 0.75, index * 0.58, `${stringInfo.name} 空弦`);
   });
